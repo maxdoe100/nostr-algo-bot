@@ -4,7 +4,7 @@ A Nostr bot that helps you repost your favorite content on a schedule.
 
 ## Features
 
-- Schedule reposts with flexible intervals (hourly, daily, weekly, monthly, yearly)
+- Schedule reposts with flexible intervals (minutely, hourly, daily, weekly, monthly, yearly)
 - Specify number of reposts (1-5)
 - Spam protection and rate limiting
 - Persistent storage with Supabase
@@ -13,7 +13,7 @@ A Nostr bot that helps you repost your favorite content on a schedule.
 
 1. Create a Supabase project at https://supabase.com
 2. Run the database migrations in `supabase/migrations/`
-3. Copy `.env.example` to `.env` and fill in your configuration:
+3. Copy to `.env` and fill in your configuration:
    ```
    # Nostr configuration
    BOT_NSEC=your_bot_nsec_key
@@ -41,11 +41,12 @@ Mention the bot with commands like:
 - `@bot banger! repeat weekly for 2 times`
 - `@bot daily 3`
 - `@bot hourly one`
+- `@bot minutely 5` (for development/testing)
 - `@bot cancel` (cancels all your scheduled reposts)
 
 ## Limits
 
-- Maximum 5 tasks per user for hourly/daily intervals
+- Maximum 5 tasks per user for minutely/hourly/daily intervals
 - Unlimited tasks for weekly/monthly/yearly intervals
 - Maximum 10 mentions per hour per user
 - Maximum 2,000,000 total tasks

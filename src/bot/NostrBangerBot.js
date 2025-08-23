@@ -46,6 +46,9 @@ class NostrBangerBot {
     // Start mention log cleanup every hour
     this.startMentionLogCleanup();
 
+    // Start periodic task checking for long-term tasks
+    this.startPeriodicTaskCheck();
+
     console.log(`🔑 Bot initialized with pubkey: ${nip19.npubEncode(this.publicKey)}`);
   }
 
@@ -66,6 +69,37 @@ class NostrBangerBot {
     }, 60 * 60 * 1000); // Every hour
   }
 
+  // Start periodic task checking for long-term tasks
+  startPeriodicTaskCheck() {
+    // Check for due tasks every hour
+    setInterval(() => {
+      this.checkDueTasks();
+    }, 60 * 60 * 1000); // Every hour
+  }
+
+  // Check for tasks that are due and execute them
+  async checkDueTasks() {
+    const now = Date.now();
+    const dueTasks = [];
+
+    // Find all tasks that are due
+    for (const [taskId, task] of this.tasks.entries()) {
+      if (now >= task.nextTime) {
+        dueTasks.push(taskId);
+      }
+    }
+
+    // Execute due tasks
+    for (const taskId of dueTasks) {
+      console.log(`⏰ Found due task ${taskId}, executing...`);
+      await this.executeRepost(taskId);
+    }
+
+    if (dueTasks.length > 0) {
+      console.log(`✅ Executed ${dueTasks.length} due task(s)`);
+    }
+  }
+
   // Check if user has exceeded mention rate limit
   async checkMentionRateLimit(pubkey) {
     try {
@@ -82,10 +116,10 @@ class NostrBangerBot {
     }
   }
 
-  // Check if user has exceeded task limit for hourly/daily intervals
+  // Check if user has exceeded task limit for minutely/hourly/daily intervals
   async checkUserTaskLimit(pubkey, interval) {
-    // Only apply limits to hourly and daily intervals
-    if (interval !== 'hourly' && interval !== 'daily') {
+    // Only apply limits to minutely, hourly and daily intervals
+    if (interval !== 'minutely' && interval !== 'hourly' && interval !== 'daily') {
       return true;
     }
     
@@ -98,9 +132,9 @@ class NostrBangerBot {
     }
   }
 
-  // Increment user task count for hourly/daily intervals
+  // Increment user task count for minutely/hourly/daily intervals
   async incrementUserTaskCount(pubkey, interval) {
-    if (interval === 'hourly' || interval === 'daily') {
+    if (interval === 'minutely' || interval === 'hourly' || interval === 'daily') {
       try {
         await supabase.incrementUserTaskCount(pubkey);
       } catch (error) {
@@ -127,44 +161,81 @@ class NostrBangerBot {
   // Cancel tasks for a user
   async cancelUserTasks(pubkey) {
     let cancelledCount = 0;
-    const tasksToCancel = [];
 
+    // First, clear any in-memory tasks and timeouts
     for (const [taskId, task] of this.tasks.entries()) {
       if (task.mentioner.pubkey === pubkey) {
-        tasksToCancel.push(taskId);
-      }
-    }
-
-    for (const taskId of tasksToCancel) {
-      const task = this.tasks.get(taskId);
-      if (task) {
         // Clear timeout
         const timeout = this.timeouts.get(taskId);
         if (timeout) clearTimeout(timeout);
         this.timeouts.delete(taskId);
-
-        // Decrement user task count for hourly/daily intervals
-        if (task.interval === INTERVALS.hourly || task.interval === INTERVALS.daily) {
-          try {
-            await supabase.decrementUserTaskCount(pubkey);
-          } catch (error) {
-            console.error('❌ Error decrementing user task count:', error);
-          }
-        }
-
-        // Remove task
-        try {
-          await supabase.deleteTask(taskId);
-          this.tasks.delete(taskId);
-          cancelledCount++;
-        } catch (error) {
-          console.error('❌ Error deleting task:', error);
-        }
+        this.tasks.delete(taskId);
       }
+    }
+
+    // Then delete all tasks from database, including those with repetitions = 0
+    try {
+      cancelledCount = await supabase.deleteUserTasks(pubkey);
+      
+      // Decrement user task count for the user (we'll reset it on next load)
+      try {
+        await supabase.decrementUserTaskCount(pubkey);
+      } catch (error) {
+        console.error('❌ Error decrementing user task count:', error);
+      }
+    } catch (error) {
+      console.error('❌ Error deleting tasks from database:', error);
     }
 
     if (cancelledCount > 0) {
       console.log(`❌ Cancelled ${cancelledCount} tasks for user ${shortId(pubkey)}`);
+    }
+
+    return cancelledCount;
+  }
+
+  // Cancel a specific task for a user by event ID
+  async cancelSpecificTask(pubkey, originalEventId) {
+    console.log(`🚫 Cancelling specific task for user ${shortId(pubkey)} and event ${shortId(originalEventId)}`);
+    let cancelledCount = 0;
+
+    // First, clear any in-memory tasks and timeouts for this specific event
+    for (const [taskId, task] of this.tasks.entries()) {
+      if (task.mentioner.pubkey === pubkey && task.originalEvent.id === originalEventId) {
+        console.log(`🗑️  Found in-memory task ${taskId} to cancel`);
+        // Clear timeout
+        const timeout = this.timeouts.get(taskId);
+        if (timeout) clearTimeout(timeout);
+        this.timeouts.delete(taskId);
+        this.tasks.delete(taskId);
+        cancelledCount++;
+      }
+    }
+    
+    console.log(`💾 Cancelled ${cancelledCount} in-memory tasks`);
+
+    // Then delete the specific task from database
+    try {
+      console.log(`🗄️  Attempting to delete from database...`);
+      const dbCancelledCount = await supabase.deleteTaskByEventId(pubkey, originalEventId);
+      console.log(`🗄️  Database deletion returned: ${dbCancelledCount} tasks`);
+      cancelledCount = Math.max(cancelledCount, dbCancelledCount);
+      
+      // Decrement user task count if we cancelled a task
+      if (cancelledCount > 0) {
+        try {
+          await supabase.decrementUserTaskCount(pubkey);
+          console.log(`📊 Decremented user task count for ${shortId(pubkey)}`);
+        } catch (error) {
+          console.error('❌ Error decrementing user task count:', error);
+        }
+      }
+    } catch (error) {
+      console.error('❌ Error deleting specific task from database:', error);
+    }
+
+    if (cancelledCount > 0) {
+      console.log(`❌ Cancelled ${cancelledCount} task(s) for user ${shortId(pubkey)} and event ${shortId(originalEventId)}`);
     }
 
     return cancelledCount;
@@ -207,12 +278,24 @@ class NostrBangerBot {
   scheduleTask(taskId, task) {
     const now = Date.now();
     const delay = Math.max(0, task.nextTime - now);
-    const timeout = setTimeout(() => {
-      this.executeRepost(taskId);
-    }, delay);
-    this.timeouts.set(taskId, timeout);
-    const nextDate = new Date(task.nextTime).toLocaleString();
-    console.log(`⏰ Scheduled task ${taskId} for ${nextDate} (${Math.round(delay / 1000)}s delay)`);
+    
+    // For short delays (≤ 1 day), use setTimeout for precise timing
+    const SHORT_DELAY_THRESHOLD = 24 * 60 * 60 * 1000; // 1 day in milliseconds
+    
+    if (delay <= SHORT_DELAY_THRESHOLD) {
+      // For short delays, use the exact timeout
+      const timeout = setTimeout(() => {
+        this.executeRepost(taskId);
+      }, delay);
+      this.timeouts.set(taskId, timeout);
+      const nextDate = new Date(task.nextTime).toLocaleString();
+      console.log(`⏰ Scheduled task ${taskId} for ${nextDate} (${Math.round(delay / 1000)}s delay)`);
+    } else {
+      // For long delays, rely on the periodic check (every hour)
+      // No timeout needed - the periodic check will handle it
+      const nextDate = new Date(task.nextTime).toLocaleString();
+      console.log(`⏰ Scheduled long-term task ${taskId} for ${nextDate} (will be checked hourly)`);
+    }
   }
 
   // Execute a repost task
@@ -229,20 +312,33 @@ class NostrBangerBot {
        }
        console.log(`🔄 Executing repost for task ${taskId}`);
 
-      // Strict NIP-18 repost (kind 6): content must be the JSON of the original event only
+      // Create kind 1 repost with message from template
+      const repostMessageTemplate = getRandomMessage(REPOST_MESSAGES);
+      const repostMessage = formatMessage(repostMessageTemplate, task.mentioner.name);
+      
+      // Create nevent URL for the original event
+      const neventUrl = `nostr:${nip19.neventEncode({
+        id: task.originalEvent.id,
+        relays: this.relays
+      })}`;
+      
+      // Build content with the repost message and nevent reference
+      const repostContent = `${repostMessage}\n\n${neventUrl}`;
+      
       const repostEvent = {
-        kind: 6,
+        kind: 1,
         created_at: Math.floor(Date.now() / 1000),
-        content: JSON.stringify(task.originalEvent),
+        content: repostContent,
         tags: [
-          ['e', task.originalEvent.id],
-          ['p', task.originalEvent.pubkey]
+          ['e', task.originalEvent.id, this.relays[0] || '', 'mention'],
+          ['p', task.originalEvent.pubkey],
+          ['p', task.mentioner.pubkey]
         ]
       };
 
       const signedEvent = finalizeEvent(repostEvent, this.privateKey);
 
-      // Publish strict repost to all relays (tolerate failures)
+      // Publish repost to all relays (tolerate failures)
       const okCount = await this.publishToRelays(signedEvent, 'repost');
       console.log(`✅ Published repost for event ${task.originalEvent.id} (accepted by ${okCount} relays)`);
 
@@ -270,8 +366,8 @@ class NostrBangerBot {
            if (timeout) clearTimeout(timeout);
            this.timeouts.delete(taskId);
            
-           // Decrement user task count for hourly/daily intervals
-           if (task.interval === INTERVALS.hourly || task.interval === INTERVALS.daily) {
+                     // Decrement user task count for minutely/hourly/daily intervals
+          if (task.interval === INTERVALS.minutely || task.interval === INTERVALS.hourly || task.interval === INTERVALS.daily) {
              const mentionerPubkey = task.mentioner.pubkey;
              try {
                await supabase.decrementUserTaskCount(mentionerPubkey);
@@ -368,18 +464,6 @@ class NostrBangerBot {
 
   // Process mention event
   async processMention(event) {
-    // Check for duplicate mentions in Supabase
-    try {
-      const count = await supabase.getMentionCount(event.id);
-      if (count > 0) {
-        console.log('🔄 Duplicate mention detected; skipping');
-        return;
-      }
-      await supabase.logMention(event.id);
-    } catch (error) {
-      console.error('❌ Error checking for duplicate mention:', error);
-      return;
-    }
     console.log(`📨 Processing mention from ${nip19.npubEncode(event.pubkey)}`);
     if (event.pubkey === this.publicKey) {
       console.log('🤖 Skipping self-reply');
@@ -391,20 +475,49 @@ class NostrBangerBot {
       console.log('🚫 User exceeded mention rate limit (10/hour)');
       return;
     }
+    
     const command = parseCommand(event.content);
     if (!command) {
       console.log('❌ No valid banger command found');
       return;
     }
 
-    // Handle cancel action
+    // Handle cancel action first, before any other processing
     if (command.action === 'cancel') {
-      const cancelledCount = await this.cancelUserTasks(event.pubkey);
-      if (cancelledCount > 0) {
-        await this.sendConfirmation(event, 'cancelled', cancelledCount, null);
-      } else {
-        console.log('ℹ️  No tasks found to cancel for user');
+      // Get the original event ID from the mention
+      const originalEventId = getOriginalEventId(event);
+      if (!originalEventId) {
+        console.log('❌ No original event ID found in tags for cancel command');
+        return;
       }
+      
+      const cancelledCount = await this.cancelSpecificTask(event.pubkey, originalEventId);
+      if (cancelledCount > 0) {
+        // Fetch the original event for the confirmation reply
+        try {
+          const originalEvent = await this.pool.get(this.relays, { ids: [originalEventId] });
+          await this.sendConfirmation(event, 'cancelled', cancelledCount, originalEvent);
+        } catch (error) {
+          console.error('❌ Error fetching original event for confirmation:', error);
+          // Still send confirmation even if we can't fetch the original event
+          await this.sendConfirmation(event, 'cancelled', cancelledCount, null);
+        }
+      } else {
+        console.log('ℹ️  No task found to cancel for this event');
+      }
+      return;
+    }
+
+    // For non-cancel commands, check for duplicate mentions
+    try {
+      const count = await supabase.getMentionCount(event.id);
+      if (count > 0) {
+        console.log('🔄 Duplicate mention detected; skipping');
+        return;
+      }
+      await supabase.logMention(event.id);
+    } catch (error) {
+      console.error('❌ Error checking for duplicate mention:', error);
       return;
     }
 
@@ -417,14 +530,15 @@ class NostrBangerBot {
       return;
     }
 
+    // For non-cancel commands, check original event and duplicates
     const originalEventId = getOriginalEventId(event);
     if (!originalEventId) {
       console.log('❌ No original event ID found in tags');
       return;
     }
 
-    // Spam protection: Check for duplicate task
-    if (this.checkDuplicateTask(event.pubkey, originalEventId)) {
+    // Spam protection: Check for duplicate task (skip for cancel command)
+    if (command.action !== 'cancel' && this.checkDuplicateTask(event.pubkey, originalEventId)) {
       console.log('🚫 Duplicate task already exists for this user and event');
       return;
     }

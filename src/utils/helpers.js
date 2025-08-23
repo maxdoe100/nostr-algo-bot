@@ -18,22 +18,23 @@ function shortId(id) {
 
 // Parse command from mention text
 function parseCommand(content) {
-  const intervals = ['hourly', 'daily', 'weekly', 'monthly', 'yearly'];
+  const intervals = ['minutely', 'hourly', 'daily', 'weekly', 'monthly', 'yearly'];
   const counts = {
     '1': 1, '2': 2, '3': 3, '4': 4, '5': 5,
     'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
     'a': 1, 'an': 1, 'once': 1, 'twice': 2, 'thrice': 3
   };
 
-  // Check for cancel command
+  // Check for cancel command - look for "cancel" anywhere in the content
   const cleaned = content.toLowerCase().replace(/[.,!?:;-]/g, ' ').trim();
-  if (cleaned === 'cancel') {
+  const words = cleaned.split(/\s+/).filter(w => w.length > 0);
+  
+  if (words.includes('cancel')) {
     console.log('Cancel command detected in content:', content);
     return { action: 'cancel' };
   }
 
   // Parse interval and count
-  const words = cleaned.split(/\s+/).filter(w => w.length > 0);
 
   // Look for patterns like "repeat weekly for 3 weeks" or "weekly for 3 times"
   let interval = null;
@@ -78,10 +79,10 @@ function parseCommand(content) {
     }
   }
 
-  // If still not found, use defaults
+  // If still not found, return null (no valid command)
   if (!interval || !count) {
-    console.log('Using defaults (weekly 3) for content:', content);
-    return { interval: 'weekly', count: 3 };
+    console.log('No valid command pattern found in content:', content);
+    return null;
   }
 
   return { interval, count: Math.min(count, 5) };
@@ -96,9 +97,9 @@ function getOriginalEventId(mentionEvent) {
   return null;
 }
 
-// Compute repetitions from interval and count, capped to 3
+// Compute repetitions from interval and count, capped to 5
 function computeRepetitions(interval, count) {
-  const MAX_REPS = 3;
+  const MAX_REPS = 5;
   return Math.min(MAX_REPS, count);
 }
 
