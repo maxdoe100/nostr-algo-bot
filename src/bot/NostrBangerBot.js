@@ -2,7 +2,7 @@ const { SimplePool, finalizeEvent, getPublicKey, nip19 } = require('nostr-tools'
 const supabase = require('../../supabase');
 const { DEFAULT_RELAYS, SPAM_LIMITS, INTERVALS } = require('../config/constants');
 const { hexToBytes, shortId, parseCommand, getOriginalEventId, computeRepetitions } = require('../utils/helpers');
-const { CONFIRMATION_MESSAGES, REPOST_MESSAGES, getRandomMessage, formatMessage } = require('../templates/messages');
+const { CONFIRMATION_MESSAGES, REPOST_MESSAGES, ZAP_REPLY_MESSAGES, getRandomMessage, formatMessage } = require('../templates/messages');
 
 class NostrBangerBot {
   constructor() {
@@ -342,7 +342,8 @@ class NostrBangerBot {
       const okCount = await this.publishToRelays(signedEvent, 'repost');
       console.log(`✅ Published repost for event ${task.originalEvent.id} (accepted by ${okCount} relays)`);
 
-      
+      // Send zap reply to the repost itself
+      await this.sendZapReply(signedEvent);
 
       // Update task
       task.repetitions -= 1;
@@ -436,6 +437,59 @@ class NostrBangerBot {
       console.log(`💬 Sent confirmation reply (accepted by ${okCount} relays)`);
     } catch (error) {
       console.error('❌ Error sending confirmation:', error);
+    }
+  }
+
+  // Send zap reply to a repost
+  async sendZapReply(repostEvent) {
+    try {
+      // Get a random zap message
+      const zapMessage = getRandomMessage(ZAP_REPLY_MESSAGES);
+      
+      // Build e-tags: include both root (original event) and reply (repost)
+      const eTags = [];
+      
+      // If the repost has an original event reference, use it as root
+      const originalEventId = repostEvent.tags?.find(tag => tag[0] === 'e' && tag[3] === 'mention')?.[1];
+      if (originalEventId) {
+        eTags.push(['e', originalEventId, '', 'root']);
+      }
+      
+      // Add the repost as the reply target
+      eTags.push(['e', repostEvent.id, '', 'reply']);
+
+      // Build p-tags: include the bot's own pubkey and any authors from the repost
+      const pSet = new Set();
+      const pTags = [];
+      
+      // Add the bot's pubkey
+      if (!pSet.has(this.publicKey)) { 
+        pSet.add(this.publicKey); 
+        pTags.push(['p', this.publicKey]); 
+      }
+      
+      // Add any authors from the repost's p-tags
+      if (repostEvent.tags) {
+        for (const tag of repostEvent.tags) {
+          if (tag[0] === 'p' && !pSet.has(tag[1])) {
+            pSet.add(tag[1]);
+            pTags.push(['p', tag[1]]);
+          }
+        }
+      }
+
+      const zapReplyEvent = {
+        kind: 1,
+        created_at: Math.floor(Date.now() / 1000),
+        content: zapMessage,
+        tags: [...eTags, ...pTags]
+      };
+
+      const signedEvent = finalizeEvent(zapReplyEvent, this.privateKey);
+      const okCount = await this.publishToRelays(signedEvent, 'zap reply');
+      console.log(`⚡ Sent zap reply to repost (accepted by ${okCount} relays)`);
+    } catch (error) {
+      console.error('❌ Error sending zap reply:', error);
     }
   }
 
