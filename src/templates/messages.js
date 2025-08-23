@@ -32,7 +32,7 @@ const REPOST_MESSAGES = [
   'Another masterpiece discovered by {mentioner}. 🎨✨',
   'Thanks to {mentioner} for this gem! 💎⚡',
   'Brought back by popular demand from {mentioner}. 📢🎉',
-  '{mentioner} beeing the algo now. 🤖✅',
+  '{mentioner} being the algo now. 🤖✅',
   'The algo loves this, thanks to {mentioner}. 🧠❤️',
   'No algo, no problem thanks to {mentioner}. 💥🤖'
 ];

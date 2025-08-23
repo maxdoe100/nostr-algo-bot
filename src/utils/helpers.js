@@ -18,7 +18,29 @@ function shortId(id) {
 
 // Parse command from mention text
 function parseCommand(content) {
-  const intervals = ['minutely', 'hourly', 'daily', 'weekly', 'monthly', 'yearly'];
+  // Define interval mappings - both full forms and singular forms
+  const intervalMappings = {
+    'minutely': 'minutely',
+    'minute': 'minutely',
+    'minutes': 'minutely',
+    'hourly': 'hourly', 
+    'hour': 'hourly',
+    'hours': 'hourly',
+    'daily': 'daily',
+    'day': 'daily', 
+    'days': 'daily',
+    'weekly': 'weekly',
+    'week': 'weekly',
+    'weeks': 'weekly',
+    'monthly': 'monthly',
+    'month': 'monthly',
+    'months': 'monthly',
+    'yearly': 'yearly',
+    'year': 'yearly',
+    'years': 'yearly'
+  };
+  
+  const intervals = Object.keys(intervalMappings);
   const counts = {
     '1': 1, '2': 2, '3': 3, '4': 4, '5': 5,
     'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
@@ -45,7 +67,7 @@ function parseCommand(content) {
   if (repeatIndex !== -1 && repeatIndex + 1 < words.length) {
     const potentialInterval = words[repeatIndex + 1];
     if (intervals.includes(potentialInterval)) {
-      interval = potentialInterval;
+      interval = intervalMappings[potentialInterval];
       // Look for count after "for"
       const forIndex = words.indexOf('for', repeatIndex);
       if (forIndex !== -1 && forIndex + 1 < words.length) {
@@ -64,7 +86,7 @@ function parseCommand(content) {
     // Find the first interval
     const intervalIndex = words.findIndex(w => intervals.includes(w));
     if (intervalIndex !== -1) {
-      interval = words[intervalIndex];
+      interval = intervalMappings[words[intervalIndex]];
       // Look for count near the interval
       for (let i = Math.max(0, intervalIndex - 3); i < Math.min(words.length, intervalIndex + 4); i++) {
         const word = words[i];
