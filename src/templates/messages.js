@@ -15,9 +15,23 @@ const CONFIRMATION_MESSAGES = [
   'Second time\'s the charm, third time\'s the banger! 🎭⚡ (Third time\'s the zap charm! ⚡)',
   'Like fine wine, this tweet gets better with age! 🍷⚡ (Electricity bills age too 👀)',
   'The sequel is always better than the original! 🎬⚡ (Sequel zaps are even better! ⚡)',
-  'You are the algorithm now! 🤖⚡ (Human algo knows what\'s good! 🧠⚡)',
-  'Breaking the algorithm with this one! 💥⚡ (Your algo can\'t resist this banger! 🤖⚡)',
-  'Your algorithm is having a moment! 🎭⚡ (Even human algos have feelings! ❤️⚡)'
+  'You are the algorithm now! 🤖⚡ (Bot needs coffee too ☕⚡)',
+  'Breaking the algorithm with this one! 💥⚡ (Bot needs coffee too ☕⚡)',
+  'Your algorithm is having a moment! 🎭⚡ (Bot needs coffee too ☕⚡)'
+];
+
+// Invalid command help messages
+const INVALID_COMMAND_MESSAGES = [
+  'Try: "repeat weekly for 2 weeks" or "cancel"',
+  'Format: "repeat [interval] for [count] [unit]"',
+  'Example: "repeat daily for 3 days" or "cancel"',
+  'Use: "repeat hourly/daily/weekly for X hours/days/weeks"',
+  'Command: "repeat [minutely/hourly/daily/weekly/monthly] for [number] [units]"',
+  'Try: "repeat monthly for 1 month" or "cancel"',
+  'Format: "repeat [interval] for [count] [unit]" - Reply to a post first!',
+  'Example: "repeat daily for 5 days" or "cancel"',
+  'Use: "repeat [interval] for [count] [unit]" - Reply to content you want reposted',
+  'Command: "repeat [interval] for [count] [unit]" or "cancel"'
 ];
 
 // Funny repost messages (templated)
@@ -84,6 +98,7 @@ function formatMessage(template, mentioner) {
 
 module.exports = {
   CONFIRMATION_MESSAGES,
+  INVALID_COMMAND_MESSAGES,
   REPOST_MESSAGES,
   ZAP_REPLY_MESSAGES,
   getRandomMessage,

@@ -2,7 +2,7 @@ const { SimplePool, finalizeEvent, getPublicKey, nip19 } = require('nostr-tools'
 const supabase = require('../../supabase');
 const { DEFAULT_RELAYS, SPAM_LIMITS, INTERVALS } = require('../config/constants');
 const { hexToBytes, shortId, parseCommand, getOriginalEventId, computeRepetitions } = require('../utils/helpers');
-const { CONFIRMATION_MESSAGES, REPOST_MESSAGES, ZAP_REPLY_MESSAGES, getRandomMessage, formatMessage } = require('../templates/messages');
+const { CONFIRMATION_MESSAGES, INVALID_COMMAND_MESSAGES, REPOST_MESSAGES, ZAP_REPLY_MESSAGES, getRandomMessage, formatMessage } = require('../templates/messages');
 
 class NostrBangerBot {
   constructor() {
@@ -62,10 +62,21 @@ class NostrBangerBot {
     }
   }
 
+  // Clean up completed tasks from database
+  async cleanupCompletedTasks() {
+    try {
+      await supabase.cleanupCompletedTasks();
+      console.log('🧹 Cleaned up completed tasks from database');
+    } catch (error) {
+      console.error('❌ Error cleaning up completed tasks:', error);
+    }
+  }
+
   // Start mention log cleanup timer
   startMentionLogCleanup() {
     setInterval(() => {
       this.cleanupMentionLog();
+      this.cleanupCompletedTasks();
     }, 60 * 60 * 1000); // Every hour
   }
 
@@ -254,6 +265,9 @@ class NostrBangerBot {
   // Load tasks from Supabase
   async loadTasks() {
     try {
+      // First, clean up any orphaned completed tasks
+      await this.cleanupCompletedTasks();
+      
       const tasks = await supabase.loadTasks();
       for (const [id, task] of tasks.entries()) {
         this.tasks.set(id, task);
@@ -393,6 +407,30 @@ class NostrBangerBot {
     
     if (interval === 'cancelled') {
       fullMessage = `Cancelled ${repetitions} task${repetitions === 1 ? '' : 's'} for you.`;
+    } else if (interval === 'duplicate_task') {
+      fullMessage = `You already have a task scheduled for this event. Please wait for it to complete or cancel it first.`;
+    } else if (interval === 'rate_limit_exceeded') {
+      fullMessage = `You've exceeded the mention rate limit (10 mentions per hour). Please wait before trying again.`;
+    } else if (interval === 'invalid_command') {
+      fullMessage = getRandomMessage(INVALID_COMMAND_MESSAGES);
+    } else if (interval === 'no_event_id') {
+      fullMessage = `No original event found in your mention. Please reply to the event you want to repost.`;
+    } else if (interval === 'no_task_to_cancel') {
+      fullMessage = `No active task found to cancel for this event.`;
+    } else if (interval === 'invalid_repetitions') {
+      fullMessage = `Invalid repetition count. Please specify a valid number.`;
+    } else if (interval === 'total_limit_exceeded') {
+      fullMessage = `System is at maximum capacity. Please try again later.`;
+    } else if (interval === 'user_limit_exceeded') {
+      fullMessage = `You've reached the maximum number of active tasks (5) for this interval type.`;
+    } else if (interval === 'event_not_found') {
+      fullMessage = `The original event could not be found. It may have been deleted.`;
+    } else if (interval === 'own_content') {
+      fullMessage = `I can't repost my own content. Please mention me on someone else's post.`;
+    } else if (interval === 'invalid_interval') {
+      fullMessage = `Invalid interval specified. Use: minutely, hourly, daily, weekly, or monthly.`;
+    } else if (interval === 'processing_error') {
+      fullMessage = `Sorry, there was an error processing your request. Please try again.`;
     } else {
       const template = getRandomMessage(CONFIRMATION_MESSAGES);
       const base = template || 'Banger scheduled!';
@@ -525,14 +563,16 @@ class NostrBangerBot {
     }
 
     // Spam protection: Check mention rate limit
-    if (!this.checkMentionRateLimit(event.pubkey)) {
+    if (!(await this.checkMentionRateLimit(event.pubkey))) {
       console.log('🚫 User exceeded mention rate limit (10/hour)');
+      await this.sendConfirmation(event, 'rate_limit_exceeded', 0, null);
       return;
     }
     
     const command = parseCommand(event.content);
     if (!command) {
       console.log('❌ No valid banger command found');
+      await this.sendConfirmation(event, 'invalid_command', 0, null);
       return;
     }
 
@@ -542,6 +582,7 @@ class NostrBangerBot {
       const originalEventId = getOriginalEventId(event);
       if (!originalEventId) {
         console.log('❌ No original event ID found in tags for cancel command');
+        await this.sendConfirmation(event, 'no_event_id', 0, null);
         return;
       }
       
@@ -558,22 +599,12 @@ class NostrBangerBot {
         }
       } else {
         console.log('ℹ️  No task found to cancel for this event');
+        await this.sendConfirmation(event, 'no_task_to_cancel', 0, null);
       }
       return;
     }
 
-    // For non-cancel commands, check for duplicate mentions
-    try {
-      const count = await supabase.getMentionCount(event.id);
-      if (count > 0) {
-        console.log('🔄 Duplicate mention detected; skipping');
-        return;
-      }
-      await supabase.logMention(event.id);
-    } catch (error) {
-      console.error('❌ Error checking for duplicate mention:', error);
-      return;
-    }
+
 
     const { interval, count } = command;
 
@@ -581,6 +612,7 @@ class NostrBangerBot {
     const repetitions = computeRepetitions(interval, count);
     if (!Number.isFinite(repetitions) || repetitions < 1) {
       console.log('❌ Could not compute repetitions from count');
+      await this.sendConfirmation(event, 'invalid_repetitions', 0, null);
       return;
     }
 
@@ -588,34 +620,40 @@ class NostrBangerBot {
     const originalEventId = getOriginalEventId(event);
     if (!originalEventId) {
       console.log('❌ No original event ID found in tags');
+      await this.sendConfirmation(event, 'no_event_id', 0, null);
       return;
     }
 
     // Spam protection: Check for duplicate task (skip for cancel command)
     if (command.action !== 'cancel' && this.checkDuplicateTask(event.pubkey, originalEventId)) {
       console.log('🚫 Duplicate task already exists for this user and event');
+      await this.sendConfirmation(event, 'duplicate_task', 0, null);
       return;
     }
 
     // Spam protection: Check total tasks limit
     if (!this.checkTotalTasksLimit()) {
       console.log('🚫 Total tasks limit exceeded (2,000,000)');
+      await this.sendConfirmation(event, 'total_limit_exceeded', 0, null);
       return;
     }
 
     // Spam protection: Check user task limit for hourly/daily intervals
-    if (!this.checkUserTaskLimit(event.pubkey, interval)) {
+    if (!(await this.checkUserTaskLimit(event.pubkey, interval))) {
       console.log(`🚫 User exceeded task limit for ${interval} intervals (5 max)`);
+      await this.sendConfirmation(event, 'user_limit_exceeded', 0, null);
       return;
     }
     try {
       const originalEvent = await this.pool.get(this.relays, { ids: [originalEventId] });
       if (!originalEvent) {
         console.log(`❌ Original event ${originalEventId} not found`);
+        await this.sendConfirmation(event, 'event_not_found', 0, null);
         return;
       }
       if (originalEvent.pubkey === this.publicKey) {
         console.log('🤖 Skipping repost of own content');
+        await this.sendConfirmation(event, 'own_content', 0, originalEvent);
         return;
       }
 
@@ -623,6 +661,7 @@ class NostrBangerBot {
        const intervalMs = INTERVALS[interval];
        if (!intervalMs) {
          console.error('Invalid interval:', interval);
+         await this.sendConfirmation(event, 'invalid_interval', 0, null);
          return;
        }
        // Resolve mentioner display info
@@ -666,6 +705,12 @@ class NostrBangerBot {
       console.log(`✅ Created task ${taskId}: ${repetitions} ${interval} reposts`);
     } catch (error) {
       console.error('❌ Error processing mention:', error);
+      // Send error confirmation to user
+      try {
+        await this.sendConfirmation(event, 'processing_error', 0, null);
+      } catch (confirmError) {
+        console.error('❌ Error sending error confirmation:', confirmError);
+      }
     }
   }
 

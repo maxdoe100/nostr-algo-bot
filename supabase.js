@@ -27,7 +27,8 @@ async function saveTasks(tasks) {
 async function loadTasks() {
   const { data, error } = await supabase
     .from('tasks')
-    .select('*');
+    .select('*')
+    .gt('repetitions', 0); // Only load active tasks (repetitions > 0)
 
   if (error) throw error;
 
@@ -136,6 +137,15 @@ async function cleanupMentionLogs() {
   if (error) throw error;
 }
 
+async function cleanupCompletedTasks() {
+  const { error } = await supabase
+    .from('tasks')
+    .delete()
+    .eq('repetitions', 0);
+
+  if (error) throw error;
+}
+
 // User task count functions
 async function getUserTaskCount(pubkey) {
   const { data, error } = await supabase
@@ -182,6 +192,7 @@ module.exports = {
   logMention,
   getMentionCount,
   cleanupMentionLogs,
+  cleanupCompletedTasks,
   getUserTaskCount,
   incrementUserTaskCount,
   decrementUserTaskCount
