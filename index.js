@@ -18,7 +18,7 @@ const NostrBangerBot = require('./src/bot/NostrBangerBot');
 
 // Create Express app
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000; // Render's default port is 10000
 
 // Health check endpoint to keep the service alive
 app.get('/health', (req, res) => {
@@ -39,9 +39,9 @@ app.get('/', (req, res) => {
   });
 });
 
-// Start HTTP server
-app.listen(PORT, () => {
-  console.log(`HTTP server running on port ${PORT}`);
+// Start HTTP server - bind to 0.0.0.0 as required by Render
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`HTTP server running on port ${PORT} (bound to 0.0.0.0)`);
 });
 
 // 10-minute keep-alive task to prevent freezing on Render's free tier
@@ -54,7 +54,7 @@ const startKeepAliveTask = () => {
     
     // Optional: Make an internal HTTP request to /health endpoint
     // This simulates external traffic and helps keep the service active
-    const healthCheck = http.get(`http://localhost:${PORT}/health`, (res) => {
+    const healthCheck = http.get(`http://0.0.0.0:${PORT}/health`, (res) => {
       let data = '';
       res.on('data', (chunk) => { data += chunk; });
       res.on('end', () => {
