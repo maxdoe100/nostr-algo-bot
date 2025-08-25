@@ -467,16 +467,33 @@ class NostrBangerBot {
       fullMessage = `${base} Scheduling ${intervalName} reposts for ${repetitions} ${repetitions === 1 ? 'time' : 'times'}. Next post will be on ${nextPostDate}.`;
     }
 
-    // Build e-tags: include both root (original) and reply (mention)
+    // Build e-tags: always include the mention event as reply, and original event as root
     const eTags = [];
-    if (originalEvent?.id) eTags.push(['e', originalEvent.id, '', 'root']);
+    
+    // Always add the mention event as the reply target
     eTags.push(['e', mentionEvent.id, '', 'reply']);
+    
+    // Get original event ID from mention event tags (even if we don't have the full original event)
+    const originalEventId = getOriginalEventId(mentionEvent);
+    if (originalEventId) {
+      eTags.push(['e', originalEventId, '', 'root']);
+    }
 
     // Build p-tags: mentioner and original author, deduped
     const pSet = new Set();
     const pTags = [];
-    if (mentionEvent?.pubkey && !pSet.has(mentionEvent.pubkey)) { pSet.add(mentionEvent.pubkey); pTags.push(['p', mentionEvent.pubkey]); }
-    if (originalEvent?.pubkey && !pSet.has(originalEvent.pubkey)) { pSet.add(originalEvent.pubkey); pTags.push(['p', originalEvent.pubkey]); }
+    
+    // Always include the mentioner
+    if (mentionEvent?.pubkey && !pSet.has(mentionEvent.pubkey)) { 
+      pSet.add(mentionEvent.pubkey); 
+      pTags.push(['p', mentionEvent.pubkey]); 
+    }
+    
+    // Include original author if available and different from mentioner
+    if (originalEvent?.pubkey && !pSet.has(originalEvent.pubkey)) { 
+      pSet.add(originalEvent.pubkey); 
+      pTags.push(['p', originalEvent.pubkey]); 
+    }
 
     const replyEvent = {
       kind: 1,
