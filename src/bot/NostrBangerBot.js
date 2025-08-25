@@ -14,7 +14,7 @@ class NostrBangerBot {
       : DEFAULT_RELAYS;
 
     // How far back to look for mentions on startup (seconds)
-    this.lookbackSeconds = Number.parseInt(process.env.LOOKBACK_SECONDS || '1800', 10); // default 30 min
+    this.lookbackSeconds = Number.parseInt(process.env.LOOKBACK_SECONDS || '300', 10); // default 5 min
 
     // Parse bot's private key from environment (accept nsec or 64-char hex)
     const rawKey = process.env.BOT_NSEC || process.env.PRIVATE_KEY || process.env.NOSTR_PRIVATE_KEY;
@@ -72,11 +72,22 @@ class NostrBangerBot {
     }
   }
 
+  // Clean up old processed mentions (older than 24 hours)
+  async cleanupProcessedMentions() {
+    try {
+      await supabase.cleanupOldProcessedMentions();
+      console.log('🧹 Cleaned up old processed mentions');
+    } catch (error) {
+      console.error('❌ Error cleaning up processed mentions:', error);
+    }
+  }
+
   // Start mention log cleanup timer
   startMentionLogCleanup() {
     setInterval(() => {
       this.cleanupMentionLog();
       this.cleanupCompletedTasks();
+      this.cleanupProcessedMentions(); // Add this line
     }, 60 * 60 * 1000); // Every hour
   }
 
@@ -173,12 +184,28 @@ class NostrBangerBot {
   }
 
   // Check if task already exists for this user and event
-  checkDuplicateTask(pubkey, originalEventId) {
+  async checkDuplicateTask(pubkey, originalEventId) {
+    // First check in-memory tasks
     for (const [taskId, task] of this.tasks.entries()) {
       if (task.mentioner.pubkey === pubkey && task.originalEvent.id === originalEventId) {
+        console.log(`🚫 Found duplicate task in memory: ${taskId} for user ${shortId(pubkey)} and event ${shortId(originalEventId)}`);
         return true;
       }
     }
+    
+    // Also check database for any existing tasks
+    try {
+      const existingTasks = await supabase.getTasksByUserAndEvent(pubkey, originalEventId);
+      if (existingTasks && existingTasks.length > 0) {
+        console.log(`🚫 Found ${existingTasks.length} duplicate task(s) in database for user ${shortId(pubkey)} and event ${shortId(originalEventId)}`);
+        return true;
+      }
+    } catch (error) {
+      console.error('❌ Error checking database for duplicate tasks:', error);
+      // If we can't check the database, be conservative and assume it's a duplicate
+      return true;
+    }
+    
     return false;
   }
 
@@ -283,6 +310,9 @@ class NostrBangerBot {
       
       // Also clean up old mention logs on startup
       await this.cleanupMentionLog();
+      
+      // Clean up old processed mentions on startup
+      await this.cleanupProcessedMentions();
       
       const tasks = await supabase.loadTasks();
       for (const [id, task] of tasks.entries()) {
@@ -589,16 +619,37 @@ class NostrBangerBot {
 
   // Process mention event
   async processMention(event) {
-    console.log(`📨 Processing mention from ${nip19.npubEncode(event.pubkey)}`);
+    console.log(`📨 Processing mention from ${nip19.npubEncode(event.pubkey)} at ${new Date().toISOString()}`);
+    console.log(`📝 Mention content: "${event.content}"`);
+    console.log(`🆔 Mention event ID: ${event.id}`);
+    
     if (event.pubkey === this.publicKey) {
       console.log('🤖 Skipping self-reply');
       return;
+    }
+
+    // Check if this mention has already been processed
+    try {
+      const alreadyProcessed = await supabase.isMentionProcessed(event.id);
+      if (alreadyProcessed) {
+        console.log(`🚫 Mention ${event.id} has already been processed, skipping`);
+        return;
+      }
+    } catch (error) {
+      console.error('❌ Error checking if mention was processed:', error);
+      // Continue processing if we can't check
     }
 
     // Spam protection: Check mention rate limit
     if (!(await this.checkMentionRateLimit(event.pubkey))) {
       console.log('🚫 User exceeded mention rate limit (10/hour)');
       await this.sendConfirmation(event, 'rate_limit_exceeded', 0, null);
+      // Mark as processed even for rate limit violations
+      try {
+        await supabase.markMentionProcessed(event.id, event.pubkey, null, 'rate_limit_exceeded', null, 0);
+      } catch (error) {
+        console.error('❌ Error marking mention as processed:', error);
+      }
       return;
     }
     
@@ -606,8 +657,16 @@ class NostrBangerBot {
     if (!command) {
       console.log('❌ No valid banger command found');
       await this.sendConfirmation(event, 'invalid_command', 0, null);
+      // Mark as processed
+      try {
+        await supabase.markMentionProcessed(event.id, event.pubkey, null, 'invalid_command', null, 0);
+      } catch (error) {
+        console.error('❌ Error marking mention as processed:', error);
+      }
       return;
     }
+
+    console.log(`🔍 Parsed command:`, command);
 
     // Handle cancel action first, before any other processing
     if (command.action === 'cancel') {
@@ -616,9 +675,16 @@ class NostrBangerBot {
       if (!originalEventId) {
         console.log('❌ No original event ID found in tags for cancel command');
         await this.sendConfirmation(event, 'no_event_id', 0, null);
+        // Mark as processed
+        try {
+          await supabase.markMentionProcessed(event.id, event.pubkey, null, 'no_event_id', null, 0);
+        } catch (error) {
+          console.error('❌ Error marking mention as processed:', error);
+        }
         return;
       }
       
+      console.log(`🚫 Processing cancel command for event: ${originalEventId}`);
       const cancelledCount = await this.cancelSpecificTask(event.pubkey, originalEventId);
       if (cancelledCount > 0) {
         // Fetch the original event for the confirmation reply
@@ -633,6 +699,13 @@ class NostrBangerBot {
       } else {
         console.log('ℹ️  No task found to cancel for this event');
         await this.sendConfirmation(event, 'no_task_to_cancel', 0, null);
+      }
+      
+      // Mark as processed
+      try {
+        await supabase.markMentionProcessed(event.id, event.pubkey, originalEventId, 'cancel', null, cancelledCount);
+      } catch (error) {
+        console.error('❌ Error marking mention as processed:', error);
       }
       return;
     }
@@ -654,20 +727,42 @@ class NostrBangerBot {
     if (!originalEventId) {
       console.log('❌ No original event ID found in tags');
       await this.sendConfirmation(event, 'no_event_id', 0, null);
+      // Mark as processed
+      try {
+        await supabase.markMentionProcessed(event.id, event.pubkey, null, 'no_event_id', null, 0);
+      } catch (error) {
+        console.error('❌ Error marking mention as processed:', error);
+      }
       return;
     }
 
+    console.log(`🔍 Original event ID: ${originalEventId}`);
+
     // Spam protection: Check for duplicate task (skip for cancel command)
-    if (command.action !== 'cancel' && this.checkDuplicateTask(event.pubkey, originalEventId)) {
+    if (command.action !== 'cancel' && await this.checkDuplicateTask(event.pubkey, originalEventId)) {
       console.log('🚫 Duplicate task already exists for this user and event');
       await this.sendConfirmation(event, 'duplicate_task', 0, null);
+      // Mark as processed
+      try {
+        await supabase.markMentionProcessed(event.id, event.pubkey, originalEventId, 'duplicate_task', null, 0);
+      } catch (error) {
+        console.error('❌ Error marking mention as processed:', error);
+      }
       return;
     }
+
+    console.log(`✅ No duplicate task found, proceeding with task creation`);
 
     // Spam protection: Check total tasks limit
     if (!this.checkTotalTasksLimit()) {
       console.log('🚫 Total tasks limit exceeded (2,000,000)');
       await this.sendConfirmation(event, 'total_limit_exceeded', 0, null);
+      // Mark as processed
+      try {
+        await supabase.markMentionProcessed(event.id, event.pubkey, originalEventId, 'total_limit_exceeded', null, 0);
+      } catch (error) {
+        console.error('❌ Error marking mention as processed:', error);
+      }
       return;
     }
 
@@ -675,6 +770,12 @@ class NostrBangerBot {
     if (!(await this.checkUserTaskLimit(event.pubkey, interval))) {
       console.log(`🚫 User exceeded task limit for ${interval} intervals (5 max)`);
       await this.sendConfirmation(event, 'user_limit_exceeded', 0, null);
+      // Mark as processed
+      try {
+        await supabase.markMentionProcessed(event.id, event.pubkey, originalEventId, 'user_limit_exceeded', interval, 0);
+      } catch (error) {
+        console.error('❌ Error marking mention as processed:', error);
+      }
       return;
     }
     try {
@@ -682,19 +783,39 @@ class NostrBangerBot {
       if (!originalEvent) {
         console.log(`❌ Original event ${originalEventId} not found`);
         await this.sendConfirmation(event, 'event_not_found', 0, null);
+        // Mark as processed
+        try {
+          await supabase.markMentionProcessed(event.id, event.pubkey, originalEventId, 'event_not_found', null, 0);
+        } catch (error) {
+          console.error('❌ Error marking mention as processed:', error);
+        }
         return;
       }
       if (originalEvent.pubkey === this.publicKey) {
         console.log('🤖 Skipping repost of own content');
         await this.sendConfirmation(event, 'own_content', 0, originalEvent);
+        // Mark as processed
+        try {
+          await supabase.markMentionProcessed(event.id, event.pubkey, originalEventId, 'own_content', null, 0);
+        } catch (error) {
+          console.error('❌ Error marking mention as processed:', error);
+        }
         return;
       }
+
+      console.log(`✅ Original event found and validated`);
 
              const taskId = `${originalEventId}_${Date.now()}`;
        const intervalMs = INTERVALS[interval];
        if (!intervalMs) {
          console.error('Invalid interval:', interval);
          await this.sendConfirmation(event, 'invalid_interval', 0, null);
+         // Mark as processed
+         try {
+           await supabase.markMentionProcessed(event.id, event.pubkey, originalEventId, 'invalid_interval', interval, 0);
+         } catch (error) {
+           console.error('❌ Error marking mention as processed:', error);
+         }
          return;
        }
        // Resolve mentioner display info
@@ -715,6 +836,9 @@ class NostrBangerBot {
           name: mentionerName
         }
       };
+       
+       console.log(`📋 Creating task ${taskId} with ${repetitions} repetitions, interval: ${interval} (${intervalMs}ms)`);
+       
              // Save to local state and Supabase
        try {
          this.tasks.set(taskId, task);
@@ -726,10 +850,25 @@ class NostrBangerBot {
          
          // Increment user task count for hourly/daily intervals
          await this.incrementUserTaskCount(event.pubkey, interval);
+         
+         console.log(`✅ Task ${taskId} successfully created and scheduled`);
+         
+         // Mark as processed with success
+         try {
+           await supabase.markMentionProcessed(event.id, event.pubkey, originalEventId, 'task_created', interval, repetitions);
+         } catch (error) {
+           console.error('❌ Error marking mention as processed:', error);
+         }
        } catch (error) {
          console.error('❌ Error saving new task:', error);
          // Clean up local state if save failed
          this.tasks.delete(taskId);
+         // Mark as processed with error
+         try {
+           await supabase.markMentionProcessed(event.id, event.pubkey, originalEventId, 'processing_error', interval, 0);
+         } catch (markError) {
+           console.error('❌ Error marking mention as processed:', markError);
+         }
          throw error;
        }
       
@@ -741,6 +880,12 @@ class NostrBangerBot {
       // Send error confirmation to user
       try {
         await this.sendConfirmation(event, 'processing_error', 0, null);
+        // Mark as processed with error
+        try {
+          await supabase.markMentionProcessed(event.id, event.pubkey, originalEventId, 'processing_error', null, 0);
+        } catch (markError) {
+          console.error('❌ Error marking mention as processed:', markError);
+        }
       } catch (confirmError) {
         console.error('❌ Error sending error confirmation:', confirmError);
       }
@@ -789,3 +934,4 @@ class NostrBangerBot {
 }
 
 module.exports = NostrBangerBot;
+

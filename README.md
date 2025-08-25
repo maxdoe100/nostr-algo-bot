@@ -109,6 +109,35 @@ npm install
 npm start
 ```
 
+## Deployment
+
+### Render (Free Tier)
+
+This bot is configured for deployment on Render's free tier as a web service. The bot includes an HTTP server with health check endpoints to prevent spin-down.
+
+#### Deployment Steps:
+
+1. **Fork/Clone** this repository to your GitHub account
+2. **Connect to Render**: 
+   - Go to [render.com](https://render.com)
+   - Create a new account or sign in
+   - Click "New +" and select "Web Service"
+   - Connect your GitHub repository
+3. **Configure Environment Variables**:
+   - Add your environment variables in Render's dashboard:
+     - `BOT_NSEC`: Your Nostr private key
+     - `SUPABASE_URL`: Your Supabase project URL
+     - `SUPABASE_ANON_KEY`: Your Supabase anonymous key
+     - `NOSTR_RELAYS`: Comma-separated list of relays (optional)
+4. **Deploy**: Render will automatically deploy using the `render.yaml` configuration
+
+#### Health Check Endpoints:
+
+- `GET /` - Root endpoint with bot status
+- `GET /health` - Health check endpoint (used by Render for monitoring)
+
+The bot will automatically start and begin listening for Nostr mentions and commands.
+
 ## Contributing
 
 1. Fork the repository

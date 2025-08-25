@@ -3,7 +3,23 @@ const DEFAULT_RELAYS = [
   'wss://relay.damus.io',
   'wss://nos.lol',
   'wss://relay.nostr.band',
-  'wss://relay.primal.net'
+  'wss://relay.primal.net',
+  'wss://relay.snort.social',
+  'wss://nostr.wine',
+  'wss://relay.current.fyi',
+  'wss://relay.nostr.info',
+  'wss://offchain.pub',
+  'wss://relay.bitcoin.social',
+  'wss://nostr.bitcoiner.social',
+  'wss://relay.nostr.com',
+  'wss://relay.nostrich.land',
+  'wss://relay.nostr.net',
+  'wss://relay.nostr.land',
+  'wss://relay.nostr.uno',
+  'wss://relay.nostr.zone',
+  'wss://relay.nostr.watch',
+  'wss://relay.nostr.bg',
+  'wss://relay.nostr.ch'
 ];
 
 // Spam protection limits

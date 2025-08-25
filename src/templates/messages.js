@@ -22,16 +22,16 @@ const CONFIRMATION_MESSAGES = [
 
 // Invalid command help messages
 const INVALID_COMMAND_MESSAGES = [
-  'Try: "repeat weekly for 2 weeks" or "cancel"',
-  'Format: "repeat [interval] for [count] [unit]"',
-  'Example: "repeat daily for 3 days" or "cancel"',
-  'Use: "repeat hourly/daily/weekly for X hours/days/weeks"',
-  'Command: "repeat [minutely/hourly/daily/weekly/monthly] for [number] [units]"',
-  'Try: "repeat monthly for 1 month" or "cancel"',
-  'Format: "repeat [interval] for [count] [unit]" - Reply to a post first!',
-  'Example: "repeat daily for 5 days" or "cancel"',
-  'Use: "repeat [interval] for [count] [unit]" - Reply to content you want reposted',
-  'Command: "repeat [interval] for [count] [unit]" or "cancel"'
+  '🤖 Oops! Try: "repeat weekly for 2 weeks" or "cancel"',
+  '💡 Format: "repeat [interval] for [count] [unit]" - Reply to a post first!',
+  '✨ Example: "repeat daily for 3 days" or "cancel"',
+  '🎯 Use: "repeat hourly/daily/weekly for X hours/days/weeks"',
+  '🚀 Command: "repeat [minutely/hourly/daily/weekly/monthly] for [number] [units]"',
+  '💎 Try: "repeat monthly for 1 month" or "cancel"',
+  '⚡ Format: "repeat [interval] for [count] [unit]" - Reply to content you want reposted',
+  '🔥 Example: "repeat daily for 5 days" or "cancel"',
+  '🎭 Use: "repeat [interval] for [count] [unit]" or "cancel"',
+  '🌟 Need help? Try: "repeat weekly for 2 weeks" or "cancel"'
 ];
 
 // Funny repost messages (templated)

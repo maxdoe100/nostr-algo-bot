@@ -1,5 +1,5 @@
 services:
-  - type: worker
+  - type: web
     name: nostr-algo-bot
     env: node
     buildCommand: npm install
@@ -8,3 +8,4 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+    healthCheckPath: /health

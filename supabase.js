@@ -104,6 +104,18 @@ async function deleteTaskByEventId(pubkey, originalEventId) {
   return data ? data.length : 0;
 }
 
+async function getTasksByUserAndEvent(pubkey, originalEventId) {
+  const { data, error } = await supabase
+    .from('tasks')
+    .select('*')
+    .eq('mentioner->>pubkey', pubkey)
+    .eq('original_event->>id', originalEventId)
+    .gt('repetitions', 0); // Only return active tasks
+
+  if (error) throw error;
+  return data || [];
+}
+
 // Mention log functions
 async function logMention(pubkey) {
   const { error } = await supabase
@@ -183,17 +195,60 @@ async function decrementUserTaskCount(pubkey) {
   }
 }
 
+// Processed mentions functions
+async function isMentionProcessed(mentionEventId) {
+  const { data, error } = await supabase
+    .from('processed_mentions')
+    .select('mention_event_id')
+    .eq('mention_event_id', mentionEventId)
+    .single();
+
+  if (error && error.code !== 'PGRST116') throw error; // PGRST116 = not found
+  return !!data;
+}
+
+async function markMentionProcessed(mentionEventId, mentionerPubkey, originalEventId, commandAction, interval, repetitions) {
+  const { error } = await supabase
+    .from('processed_mentions')
+    .insert([{
+      mention_event_id: mentionEventId,
+      mentioner_pubkey: mentionerPubkey,
+      original_event_id: originalEventId,
+      command_action: commandAction,
+      interval: interval,
+      repetitions: repetitions
+    }]);
+
+  if (error) throw error;
+}
+
+async function cleanupOldProcessedMentions() {
+  // Clean up processed mentions older than 24 hours
+  const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+  const { error } = await supabase
+    .from('processed_mentions')
+    .delete()
+    .lt('processed_at', oneDayAgo.toISOString());
+
+  if (error) throw error;
+}
+
 module.exports = {
   saveTasks,
   loadTasks,
   deleteTask,
   deleteUserTasks,
   deleteTaskByEventId,
+  getTasksByUserAndEvent,
   logMention,
   getMentionCount,
   cleanupMentionLogs,
   cleanupCompletedTasks,
   getUserTaskCount,
   incrementUserTaskCount,
-  decrementUserTaskCount
+  decrementUserTaskCount,
+  isMentionProcessed,
+  markMentionProcessed,
+  cleanupOldProcessedMentions
 };
