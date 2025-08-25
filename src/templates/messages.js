@@ -51,40 +51,7 @@ const REPOST_MESSAGES = [
   'No algo, no problem thanks to {mentioner}. 💥🤖'
 ];
 
-// Zap reply messages for reposts
-const ZAP_REPLY_MESSAGES = [
-  '⚡ Zap to keep the bot alive! Every sat counts! 💎',
-  '💡 Value flows where value grows! Zap this bot! ⚡',
-  '🔋 Zapping powers the algorithm! Send some sats! ⚡',
-  '⚡ Your zaps fuel the banger machine! Keep it running! 🔥',
-  '💎 Premium content deserves premium zaps! Show some love! ⚡',
-  '⚡ Zapping is caring! Support the bot with sats! 💖',
-  '🔌 Electricity bills don\'t pay themselves! Zap away! ⚡',
-  '⚡ Every zap adds value to the network! Keep zapping! 💎',
-  '💡 Zapping = supporting quality content! Send sats! ⚡',
-  '⚡ The bot appreciates your zaps! Every sat matters! 💎',
-  '🔋 Zapping keeps the vibes alive! Power the bot! ⚡',
-  '⚡ Your sats power the banger algorithm! Keep flowing! 💎',
-  '💡 Value for value! Zap to keep the content flowing! ⚡',
-  '🔌 Server costs are real! Zap to keep the bot running! ⚡',
-  '⚡ Every zap is a vote for quality content! 💎',
-  '💡 Zapping = supporting the creators! Send sats! ⚡',
-  '⚡ The bot runs on pure electricity and zaps! 🔋',
-  '💎 Your zaps create more value! Keep the cycle going! ⚡',
-  '⚡ Zapping is the ultimate form of appreciation! 💖',
-  '🔋 Power the banger machine with your zaps! ⚡',
-  '⚡ Every sat you zap multiplies the value! 💎',
-  '💡 Zapping = supporting the ecosystem! Send sats! ⚡',
-  '⚡ The bot loves your zaps! Keep them coming! 💎',
-  '🔌 Zapping powers the content revolution! ⚡',
-  '⚡ Your sats fuel the algorithm! Keep zapping! 💎',
-  '💡 Value flows where value is created! Zap this! ⚡',
-  '⚡ Zapping is the new way to show love! 💖',
-  '🔋 Every zap keeps the bot buzzing! ⚡',
-  '⚡ Your zaps are the lifeblood of the bot! 💎',
-  '💡 Zapping = supporting quality curation! ⚡',
-  '⚡ The bot thrives on your zaps! Keep flowing! 💎'
-];
+
 
 // Get a random message from an array
 function getRandomMessage(messages) {
@@ -100,7 +67,6 @@ module.exports = {
   CONFIRMATION_MESSAGES,
   INVALID_COMMAND_MESSAGES,
   REPOST_MESSAGES,
-  ZAP_REPLY_MESSAGES,
   getRandomMessage,
   formatMessage
 };

@@ -2,7 +2,7 @@ const { SimplePool, finalizeEvent, getPublicKey, nip19 } = require('nostr-tools'
 const supabase = require('../../supabase');
 const { DEFAULT_RELAYS, SPAM_LIMITS, INTERVALS } = require('../config/constants');
 const { hexToBytes, shortId, parseCommand, getOriginalEventId, computeRepetitions } = require('../utils/helpers');
-const { CONFIRMATION_MESSAGES, INVALID_COMMAND_MESSAGES, REPOST_MESSAGES, ZAP_REPLY_MESSAGES, getRandomMessage, formatMessage } = require('../templates/messages');
+const { CONFIRMATION_MESSAGES, INVALID_COMMAND_MESSAGES, REPOST_MESSAGES, getRandomMessage, formatMessage } = require('../templates/messages');
 
 class NostrBangerBot {
   constructor() {
@@ -402,9 +402,6 @@ class NostrBangerBot {
       const okCount = await this.publishToRelays(signedEvent, 'repost');
       console.log(`✅ Published repost for event ${task.originalEvent.id} (accepted by ${okCount} relays)`);
 
-      // Send zap reply to the repost itself
-      await this.sendZapReply(signedEvent);
-
       // Update task
       task.repetitions -= 1;
 
@@ -541,58 +538,7 @@ class NostrBangerBot {
     }
   }
 
-  // Send zap reply to a repost
-  async sendZapReply(repostEvent) {
-    try {
-      // Get a random zap message
-      const zapMessage = getRandomMessage(ZAP_REPLY_MESSAGES);
-      
-      // Build e-tags: include both root (original event) and reply (repost)
-      const eTags = [];
-      
-      // If the repost has an original event reference, use it as root
-      const originalEventId = repostEvent.tags?.find(tag => tag[0] === 'e' && tag[3] === 'mention')?.[1];
-      if (originalEventId) {
-        eTags.push(['e', originalEventId, '', 'root']);
-      }
-      
-      // Add the repost as the reply target
-      eTags.push(['e', repostEvent.id, '', 'reply']);
 
-      // Build p-tags: include the bot's own pubkey and any authors from the repost
-      const pSet = new Set();
-      const pTags = [];
-      
-      // Add the bot's pubkey
-      if (!pSet.has(this.publicKey)) { 
-        pSet.add(this.publicKey); 
-        pTags.push(['p', this.publicKey]); 
-      }
-      
-      // Add any authors from the repost's p-tags
-      if (repostEvent.tags) {
-        for (const tag of repostEvent.tags) {
-          if (tag[0] === 'p' && !pSet.has(tag[1])) {
-            pSet.add(tag[1]);
-            pTags.push(['p', tag[1]]);
-          }
-        }
-      }
-
-      const zapReplyEvent = {
-        kind: 1,
-        created_at: Math.floor(Date.now() / 1000),
-        content: zapMessage,
-        tags: [...eTags, ...pTags]
-      };
-
-      const signedEvent = finalizeEvent(zapReplyEvent, this.privateKey);
-      const okCount = await this.publishToRelays(signedEvent, 'zap reply');
-      console.log(`⚡ Sent zap reply to repost (accepted by ${okCount} relays)`);
-    } catch (error) {
-      console.error('❌ Error sending zap reply:', error);
-    }
-  }
 
   // Resolve a display-friendly name for a pubkey (display_name > name > short npub)
   async resolveDisplay(pubkey) {
@@ -896,33 +842,78 @@ class NostrBangerBot {
   async start() {
     console.log('🚀 Starting Nostr Banger Repost Bot...');
     this.loadTasks();
-    const subscription = this.pool.subscribeMany(
-      this.relays,
-      [
-        {
-          kinds: [1],
-          '#p': [this.publicKey],
-          since: Math.floor(Date.now() / 1000) - this.lookbackSeconds
-        }
-      ],
-      {
-        onevent: (event) => {
-          this.processMention(event);
-        },
-        oneose: () => {
-          console.log('📡 Connected to relays, listening for mentions...');
-          console.log(`⏰ Subscription lookback window: ${this.lookbackSeconds} seconds`);
-        },
-        onclose: () => {
-          console.log('📡 Subscription closed');
-        }
+    this.startSubscription();
+  }
+
+  // Start subscription with automatic reconnection
+  async startSubscription() {
+    let reconnectAttempts = 0;
+    const maxReconnectAttempts = 10;
+    const baseDelay = 5000; // 5 seconds
+
+    const connect = async () => {
+      try {
+        console.log(`📡 Connecting to relays (attempt ${reconnectAttempts + 1})...`);
+        
+        const subscription = this.pool.subscribeMany(
+          this.relays,
+          [
+            {
+              kinds: [1],
+              '#p': [this.publicKey],
+              since: Math.floor(Date.now() / 1000) - this.lookbackSeconds
+            }
+          ],
+          {
+            onevent: (event) => {
+              this.processMention(event);
+            },
+            oneose: () => {
+              console.log('📡 Connected to relays, listening for mentions...');
+              console.log(`⏰ Subscription lookback window: ${this.lookbackSeconds} seconds`);
+              // Reset reconnect attempts on successful connection
+              reconnectAttempts = 0;
+            },
+            onclose: () => {
+              console.log('📡 Subscription closed');
+              
+              // Attempt to reconnect if we haven't exceeded max attempts
+              if (reconnectAttempts < maxReconnectAttempts) {
+                reconnectAttempts++;
+                const delay = Math.min(baseDelay * Math.pow(2, reconnectAttempts - 1), 300000); // Max 5 minutes
+                console.log(`🔄 Attempting to reconnect in ${delay / 1000} seconds... (attempt ${reconnectAttempts}/${maxReconnectAttempts})`);
+                
+                setTimeout(() => {
+                  connect().catch(error => {
+                    console.error('❌ Reconnection failed:', error);
+                  });
+                }, delay);
+              } else {
+                console.error('❌ Max reconnection attempts reached. Bot will stop trying to reconnect.');
+                console.log('💡 Consider restarting the bot manually or checking relay connectivity.');
+              }
+            }
+          }
+        );
+
+        // Store subscription reference for graceful shutdown
+        this.currentSubscription = subscription;
+
+      } catch (error) {
+        console.error('❌ Error creating subscription:', error);
+        throw error;
       }
-    );
+    };
+
+    // Initial connection
+    await connect();
 
     process.on('SIGINT', () => {
       console.log('\n🛑 Shutting down gracefully...');
       for (const timeout of this.timeouts.values()) clearTimeout(timeout);
-      subscription.close();
+      if (this.currentSubscription) {
+        this.currentSubscription.close();
+      }
       this.pool.close(this.relays);
       console.log('👋 Bot stopped');
       process.exit(0);
