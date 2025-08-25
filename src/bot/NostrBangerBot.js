@@ -129,28 +129,41 @@ class NostrBangerBot {
 
   // Check if user has exceeded task limit for minutely/hourly/daily intervals
   async checkUserTaskLimit(pubkey, interval) {
-    // Only apply limits to minutely, hourly and daily intervals
-    if (interval !== 'minutely' && interval !== 'hourly' && interval !== 'daily') {
-      return true;
+    // Only apply limits to minutely, hourly, and daily intervals
+    const limitedIntervals = ['minutely', 'hourly', 'daily'];
+    if (!limitedIntervals.includes(interval)) {
+      return true; // No limit for weekly, monthly, yearly
     }
-    
+
     try {
       const currentCount = await supabase.getUserTaskCount(pubkey);
-      return currentCount < SPAM_LIMITS.MAX_TASKS_PER_USER_HOURLY_DAILY;
+      const maxTasks = 10; // Maximum 10 tasks for minutely/hourly/daily intervals
+      
+      if (currentCount >= maxTasks) {
+        console.log(`🚫 User ${shortId(pubkey)} has reached the limit of ${maxTasks} tasks for ${interval} intervals`);
+        return false;
+      }
+      
+      return true;
     } catch (error) {
       console.error('❌ Error checking user task limit:', error);
-      return false;
+      return false; // Fail safe - deny if we can't check
     }
   }
 
   // Increment user task count for minutely/hourly/daily intervals
   async incrementUserTaskCount(pubkey, interval) {
-    if (interval === 'minutely' || interval === 'hourly' || interval === 'daily') {
-      try {
-        await supabase.incrementUserTaskCount(pubkey);
-      } catch (error) {
-        console.error('❌ Error incrementing user task count:', error);
-      }
+    // Only increment for minutely, hourly, and daily intervals
+    const limitedIntervals = ['minutely', 'hourly', 'daily'];
+    if (!limitedIntervals.includes(interval)) {
+      return; // No counting for weekly, monthly, yearly
+    }
+
+    try {
+      await supabase.incrementUserTaskCount(pubkey);
+      console.log(`📊 Incremented task count for user ${shortId(pubkey)} (${interval} interval)`);
+    } catch (error) {
+      console.error('❌ Error incrementing user task count:', error);
     }
   }
 
@@ -267,6 +280,9 @@ class NostrBangerBot {
     try {
       // First, clean up any orphaned completed tasks
       await this.cleanupCompletedTasks();
+      
+      // Also clean up old mention logs on startup
+      await this.cleanupMentionLog();
       
       const tasks = await supabase.loadTasks();
       for (const [id, task] of tasks.entries()) {
@@ -422,7 +438,7 @@ class NostrBangerBot {
     } else if (interval === 'total_limit_exceeded') {
       fullMessage = `System is at maximum capacity. Please try again later.`;
     } else if (interval === 'user_limit_exceeded') {
-      fullMessage = `You've reached the maximum number of active tasks (5) for this interval type.`;
+      fullMessage = `You've reached the maximum number of active tasks (10) for minutely/hourly/daily intervals.`;
     } else if (interval === 'event_not_found') {
       fullMessage = `The original event could not be found. It may have been deleted.`;
     } else if (interval === 'own_content') {

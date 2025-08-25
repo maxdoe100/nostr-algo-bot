@@ -8,7 +8,6 @@ const DEFAULT_RELAYS = [
 
 // Spam protection limits
 const SPAM_LIMITS = {
-  MAX_TASKS_PER_USER_HOURLY_DAILY: 5,
   MAX_TOTAL_TASKS: 2000000,
   MAX_MENTIONS_PER_HOUR: 10
 };

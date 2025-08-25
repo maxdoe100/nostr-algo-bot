@@ -1,23 +1,23 @@
 // Fun confirmation messages
 const CONFIRMATION_MESSAGES = [
-  "You are right, that's a banger! ⚡ (Consider zapping to keep the algo alive! ⚡)",
-  'This will be even better the second time! ⚡ (Electricity bills don\'t pay themselves 👀)',
-  "🔥🔥🔥 Absolute fire tweet! Let's spread it! ⚡ (Zap to keep the fire burning! 🔥)",
-  "That's some premium content right there! ⚡ (Premium content deserves premium zaps! ⚡)",
-  'Certified banger detected! 🔥⚡ (Server costs are real, but worth it! 😄)',
-  'This deserves more eyeballs for sure! ⚡ (More eyeballs = more zaps needed! 👀)',
-  'Quality content never gets old! ⚡ (But zaps keep the bot young! ⚡)',
-  'Time to give this gem another spotlight! (Bot needs coffee too ☕⚡)',
-  'This tweet is too good to be forgotten! 💎⚡ (Zap to keep the memory alive! 💎)',
-  'Pure gold that needs to shine again! ✨⚡ (Gold content needs gold zaps! ✨)',
-  'A classic that deserves a comeback! 🎯⚡ (Hosting ain\'t free, but vibes are! 🎉)',
-  'This is the content we live for! 🚀⚡ (Zap to fuel the rocket! 🚀)',
-  'Second time\'s the charm, third time\'s the banger! 🎭⚡ (Third time\'s the zap charm! ⚡)',
-  'Like fine wine, this tweet gets better with age! 🍷⚡ (Electricity bills age too 👀)',
-  'The sequel is always better than the original! 🎬⚡ (Sequel zaps are even better! ⚡)',
-  'You are the algorithm now! 🤖⚡ (Bot needs coffee too ☕⚡)',
-  'Breaking the algorithm with this one! 💥⚡ (Bot needs coffee too ☕⚡)',
-  'Your algorithm is having a moment! 🎭⚡ (Bot needs coffee too ☕⚡)'
+  "You are right, that's a banger! ⚡",
+  'This will be even better the second time! ⚡',
+  "🔥🔥🔥 Absolute fire tweet! Let's spread it! ⚡",
+  "That's some premium content right there! ⚡",
+  'Certified banger detected! 🔥⚡',
+  'This deserves more eyeballs for sure! ⚡',
+  'Quality content never gets old! ⚡',
+  'Time to give this gem another spotlight!',
+  'This tweet is too good to be forgotten! 💎⚡',
+  'Pure gold that needs to shine again! ✨⚡ ',
+  'A classic that deserves a comeback! 🎯⚡',
+  'This is the content we live for! 🚀⚡',
+  'Second time\'s the charm, third time\'s the banger! 🎭',
+  'Like fine wine, this tweet gets better with age! 🍷⚡',
+  'The sequel is always better than the original! 🎬⚡',
+  'You are the algorithm now! 🤖⚡',
+  'Breaking the algorithm with this one! 💥⚡',
+  'Your algorithm is having a moment! 🎭⚡'
 ];
 
 // Invalid command help messages

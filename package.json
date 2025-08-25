@@ -1,12 +1,13 @@
 {
-  "name": "nostr-banger-repost-bot",
+  "name": "nostr-algo-bot",
   "version": "1.0.0",
   "description": "Automated bot that schedules periodic reposts of Nostr banger posts.",
   "main": "index.js",
   "license": "MIT",
   "scripts": {
     "start": "node index.js",
-    "dev": "node index.js"
+    "dev": "node index.js",
+    "build": "echo 'No build step required'"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.56.0",
